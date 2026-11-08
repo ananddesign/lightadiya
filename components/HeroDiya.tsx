@@ -35,6 +35,11 @@ const HeroDiya = forwardRef<HTMLButtonElement, Props>(function HeroDiya({ lit, o
             <stop offset="0.6" stopColor="#ffb23e" />
             <stop offset="1" stopColor="#ff6e14" stopOpacity="0.15" />
           </radialGradient>
+          <radialGradient id="hd-water" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stopColor="#081a38" stopOpacity="0.9" />
+            <stop offset="0.6" stopColor="#0a1e40" stopOpacity="0.6" />
+            <stop offset="1" stopColor="#0a1e40" stopOpacity="0" />
+          </radialGradient>
         </defs>
 
         {/* pulse hint before lighting */}
@@ -65,6 +70,10 @@ const HeroDiya = forwardRef<HTMLButtonElement, Props>(function HeroDiya({ lit, o
           <circle key={x} cx={x} cy={70 + Math.sin((i / 6) * Math.PI) * 6} r="1.8" fill="#ffecaa" opacity="0.8" />
         ))}
         <path d="M30 84 Q60 94 90 84" stroke="#2b1203" strokeOpacity="0.4" strokeWidth="2" fill="none" />
+
+        {/* water line: the bottom of the bowl sits under the surface */}
+        <ellipse cx="60" cy="93" rx="60" ry="8.5" fill="url(#hd-water)" />
+        <ellipse className="hd-ripple" cx="60" cy="88" rx="56" ry="5" fill="none" stroke="#ffd696" strokeOpacity="0.4" strokeWidth="0.8" />
       </svg>
     </button>
   );

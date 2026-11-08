@@ -15,10 +15,11 @@ export function cleanChain(raw: string | null | undefined): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 999999) : 0;
 }
 
-export function buildShareUrl(name: string, chain: number): string {
+export function buildShareUrl(name: string, chain: number, ref?: string): string {
   const u = new URL(window.location.origin + window.location.pathname);
   if (name) u.searchParams.set("from", name);
   u.searchParams.set("c", String(chain));
+  if (ref) u.searchParams.set("r", ref);
   return u.toString();
 }
 

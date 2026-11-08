@@ -140,3 +140,13 @@ body {
   .hero-diya .hd-flicker,
   .hero-diya .hd-hint { animation: none; }
 }
+
+.hero-diya .hd-ripple {
+  transform-box: view-box;
+  transform-origin: 60px 88px;
+  animation: hd-ripple 3.2s ease-in-out infinite;
+}
+@keyframes hd-ripple {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.06); opacity: 0.45; }
+}

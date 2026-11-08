@@ -2,6 +2,7 @@
 
 import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { initAnalytics, shortId, track } from "@/lib/analytics";
 import { SoundScape } from "@/lib/audio";
 import { Engine } from "@/lib/engine/engine";
 import { buildShareUrl, cleanName, MAX_NAME, ordinal, shareText, whatsappHref } from "@/lib/share";
@@ -35,6 +36,8 @@ export default function Experience({ from, chain }: Props) {
   const [canShare, setCanShare] = useState(false);
 
   const myNumber = chain + 1; // this viewer's place in the chain
+  const startRef = useRef(0);
+  const sharedRef = useRef(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -45,7 +48,10 @@ export default function Experience({ from, chain }: Props) {
     soundRef.current = sound;
     const engine = new Engine(canvas, hero, {
       reducedMotion: reduced,
-      onCue: (cue) => setStage(cue),
+      onCue: (cue) => {
+        setStage(cue);
+        if (cue === "message") track("Finale Reached");
+      },
       onIgnite: (n) => sound.plink(n),
       onRise: () => {
         sound.swell();
@@ -53,6 +59,10 @@ export default function Experience({ from, chain }: Props) {
       },
     });
     engineRef.current = engine;
+
+    initAnalytics(new URLSearchParams(window.location.search));
+    startRef.current = performance.now();
+    track("Page View", { has_sender_name: !!from, reduced_motion: reduced });
 
     try {
       const saved = localStorage.getItem(NAME_KEY);
@@ -80,9 +90,12 @@ export default function Experience({ from, chain }: Props) {
     } catch {}
     engineRef.current?.light();
     setStage("lit");
+    track("Diya Lit", { seconds_to_tap: Math.round((performance.now() - startRef.current) / 100) / 10 });
   }, [stage]);
 
   const replay = () => {
+    track("Replay");
+    startRef.current = performance.now();
     soundRef.current?.stopPad();
     engineRef.current?.replay();
     setCopied(false);
@@ -103,19 +116,27 @@ export default function Experience({ from, chain }: Props) {
     } catch {}
   };
 
-  const url = () => buildShareUrl(cleanName(name), myNumber);
+  const url = () => buildShareUrl(cleanName(name), myNumber, shortId());
+
+  const trackShare = (method: string) => {
+    track("Share", { method, has_name: !!cleanName(name), first_share: !sharedRef.current, stage });
+    sharedRef.current = true;
+  };
 
   const shareWhatsApp = () => {
+    trackShare("whatsapp");
     window.open(whatsappHref(cleanName(name), url()), "_blank", "noopener");
   };
 
   const shareNative = async () => {
+    trackShare("native");
     try {
       await navigator.share({ title: "Light a Diya, Spread the Light", text: shareText(cleanName(name)), url: url() });
     } catch {}
   };
 
   const copy = async () => {
+    trackShare("copy_link");
     try {
       await navigator.clipboard.writeText(url());
       setCopied(true);
@@ -226,7 +247,7 @@ export default function Experience({ from, chain }: Props) {
           {stage === "cta" && (
             <m.section
               key="cta"
-              className="absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[max(16px,env(safe-area-inset-bottom))]"
+              className="absolute inset-x-0 bottom-0 z-30 flex flex-col items-center px-4 pb-[max(16px,env(safe-area-inset-bottom))]"
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 16 }}
@@ -257,12 +278,6 @@ export default function Experience({ from, chain }: Props) {
                   Pass the light on WhatsApp
                 </button>
                 <div className="mt-2 flex items-center justify-center gap-1 text-[0.82rem] text-cream/70">
-                  {canShare && (
-                    <button type="button" onClick={shareNative} className="link">
-                      More ways to share
-                    </button>
-                  )}
-                  {canShare && <span className="text-cream/25">·</span>}
                   <button type="button" onClick={copy} className="link" aria-live="polite">
                     {copied ? "Link copied ✓" : "Copy link"}
                   </button>
@@ -272,30 +287,62 @@ export default function Experience({ from, chain }: Props) {
                   </button>
                 </div>
               </div>
+              <p className="mt-2.5 text-[0.72rem] tracking-wide text-cream/40">
+                Made with <span aria-label="love" className="text-[#ff8a8a]/70">♥</span> by Anand
+              </p>
             </m.section>
           )}
         </AnimatePresence>
 
-        {/* sound toggle */}
+        {/* top-right: share link + sound */}
         {stage !== "intro" && (
-          <button
-            type="button"
-            onClick={toggleMute}
-            aria-label={muted ? "Turn sound on" : "Turn sound off"}
-            className="absolute right-3 top-[max(12px,env(safe-area-inset-top))] z-40 grid h-10 w-10 place-items-center rounded-full text-cream/70 transition-colors hover:text-cream"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
-              {muted ? (
-                <path d="M16 9.5l5 5M21 9.5l-5 5" />
-              ) : (
-                <>
-                  <path d="M15.5 9a4 4 0 0 1 0 6" />
-                  <path d="M18 6.5a7.5 7.5 0 0 1 0 11" />
-                </>
+          <div className="absolute right-2 top-[max(10px,env(safe-area-inset-top))] z-40 flex items-center">
+            <AnimatePresence>
+              {copied && (
+                <m.span
+                  key="copied"
+                  className="mr-1 text-[0.72rem] text-cream/70"
+                  initial={{ opacity: 0, x: 6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                  role="status"
+                >
+                  Link copied
+                </m.span>
               )}
-            </svg>
-          </button>
+            </AnimatePresence>
+            <button
+              type="button"
+              onClick={canShare ? shareNative : copy}
+              aria-label="Share link"
+              className="grid h-10 w-10 place-items-center rounded-full text-cream/70 transition-colors hover:text-cream"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="18" cy="5.5" r="2.5" />
+                <circle cx="6" cy="12" r="2.5" />
+                <circle cx="18" cy="18.5" r="2.5" />
+                <path d="M8.2 10.8l7.6-4.1M8.2 13.2l7.6 4.1" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={toggleMute}
+              aria-label={muted ? "Turn sound on" : "Turn sound off"}
+              className="grid h-10 w-10 place-items-center rounded-full text-cream/70 transition-colors hover:text-cream"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+                {muted ? (
+                  <path d="M16 9.5l5 5M21 9.5l-5 5" />
+                ) : (
+                  <>
+                    <path d="M15.5 9a4 4 0 0 1 0 6" />
+                    <path d="M18 6.5a7.5 7.5 0 0 1 0 11" />
+                  </>
+                )}
+              </svg>
+            </button>
+          </div>
         )}
       </main>
     </LazyMotion>

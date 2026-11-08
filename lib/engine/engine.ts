@@ -32,13 +32,15 @@ export const HERO_VB = { w: 120, h: 110 };
 export const HERO_ANCHOR = { x: 60, y: 88 }; // water line in SVG units
 export const HERO_FLAME = { x: 60, y: 34 }; // flame centre in SVG units
 const HERO_Z = 1.9;
+const WL_DIYA = 0.8; // part of the diya sprite above the water line
+const WL_LOTUS = 0.9;
 const HERO_SIZE = 0.62; // world units
 
 type Tier = "low" | "mid" | "high";
 const COUNTS: Record<Tier, { diyas: number; lanterns: number; stars: number }> = {
-  low: { diyas: 90, lanterns: 130, stars: 90 },
-  mid: { diyas: 160, lanterns: 230, stars: 140 },
-  high: { diyas: 240, lanterns: 340, stars: 180 },
+  low: { diyas: 40, lanterns: 60, stars: 90 },
+  mid: { diyas: 70, lanterns: 105, stars: 140 },
+  high: { diyas: 105, lanterns: 155, stars: 180 },
 };
 
 interface Floater {
@@ -46,6 +48,8 @@ interface Floater {
   Z: number;
   ignite: number;
   lotus: boolean;
+  flip: number; // 1 or -1: which way the spout points
+  scale: number;
   ph: number;
   rank: number;
   sounded: boolean;
@@ -164,6 +168,7 @@ export class Engine {
   private streaks: Streak[] = [];
   private village: Village[] = [];
   private emberTimer = 0;
+  private rippleTimer = 2;
 
   constructor(canvas: HTMLCanvasElement, hero: HTMLElement, opts: EngineOptions = {}) {
     this.canvas = canvas;
@@ -248,6 +253,7 @@ export class Engine {
 
     const heroW = HERO_SIZE * (this.A / HERO_Z);
     this.hero.style.width = heroW + "px";
+    this.hero.style.transformOrigin = `${(HERO_ANCHOR.x / HERO_VB.w) * 100}% ${(HERO_ANCHOR.y / HERO_VB.h) * 100}%`;
 
     this.buildBackdrop();
     // Re-scatter the lake only before the moment starts (e.g. rotation).
@@ -293,15 +299,30 @@ export class Engine {
     const n = Math.round(c.diyas * aspect);
     const floaters: Floater[] = [];
     let maxD = 0;
-    for (let i = 0; i < n; i++) {
-      const Z = logRand(1.35, 42);
+    // Placed with breathing room: reject any light whose on-screen footprint
+    // would overlap one already placed (coordinates in units of A).
+    const placed: { sx: number; sy: number; w: number }[] = [];
+    for (let attempt = 0; attempt < n * 6 && floaters.length < n; attempt++) {
+      const Z = logRand(1.6, 42);
       const X = rand(-1, 1) * this.xLimit(Z);
       const dx = X;
       const dz = Z - HERO_Z;
-      if (Z < 3.2 && Math.abs(dx) < 0.75 && Math.abs(dz) < 1) continue; // keep hero clear
+      if (Z < 3.6 && Math.abs(dx) < 1 && Math.abs(dz) < 1.4) continue; // keep hero clear
+      const sx = X / Z;
+      const sy = 1 / Z;
+      const w = 0.4 / Z;
+      let clash = false;
+      for (const q of placed) {
+        if (Math.abs(sx - q.sx) < 0.85 * (w + q.w) && Math.abs(sy - q.sy) < 0.35 * (w + q.w)) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash) continue;
+      placed.push({ sx, sy, w });
       const d = Math.sqrt(dx * dx + dz * dz * 0.35);
       maxD = Math.max(maxD, d);
-      floaters.push({ X, Z, ignite: d, lotus: Math.random() < 0.28, ph: rand(0, 6.28), rank: Math.random(), sounded: false });
+      floaters.push({ X, Z, ignite: d, lotus: Math.random() < 0.36, flip: Math.random() < 0.5 ? -1 : 1, scale: rand(0.85, 1.15), ph: rand(0, 6.28), rank: Math.random(), sounded: false });
     }
     for (const f of floaters) {
       const u = f.ignite / maxD;
@@ -343,7 +364,7 @@ export class Engine {
   }
 
   private newLantern(launch: number, keepZ?: number): Lantern {
-    const Z = keepZ ?? logRand(2.3, 55);
+    const Z = keepZ ?? logRand(3, 55);
     let X = rand(-0.95, 0.95) * this.xLimit(Z);
     // don't launch right in front of the hero diya
     if (Z < 4.5 && Math.abs(X) < 0.9) X = (X < 0 ? -1 : 1) * rand(0.9, Math.max(1, this.xLimit(Z)));
@@ -452,7 +473,7 @@ export class Engine {
 
   private heroPos() {
     const s = this.A / HERO_Z;
-    const bob = Math.sin(this.time * 1.3) * 0.012;
+    const bob = Math.sin(this.time * 1.1) * 0.014 + Math.sin(this.time * 0.47) * 0.006;
     return { x: this.W / 2, y: this.horizon() + this.A * (1 + bob) / HERO_Z, s };
   }
 
@@ -541,6 +562,15 @@ export class Engine {
         this.emberTimer = rand(0.18, 0.4);
         const f = this.heroFlame();
         this.spawnEmber(f.x + rand(-3, 3), f.y - 10, false);
+      }
+    }
+
+    // the hero diya keeps nudging little ripples out as it bobs
+    if (tl > 2.5) {
+      this.rippleTimer -= dt;
+      if (this.rippleTimer <= 0) {
+        this.rippleTimer = rand(2.2, 3.2);
+        this.rings.push({ start: tl, X: 0, Z: HERO_Z, speed: 0.9, life: 2.4, strength: 0.35 });
       }
     }
 
@@ -697,7 +727,7 @@ export class Engine {
   }
 
   private drawFloaters(hz: number, warmth: number) {
-    const { ctx, A, W, H, sprites: S, time, tl, budget } = this;
+    const { ctx, A, W, H, sprites: S, time, tl, budget, dpr } = this;
     if (tl < 0) return;
     const cx = W / 2;
     for (const f of this.floaters) {
@@ -705,45 +735,78 @@ export class Engine {
       const lit = tl - f.ignite;
       if (lit < 0) continue;
       const s = A / f.Z;
-      const drift = Math.sin(time * 0.15 + f.ph) * 0.06;
+      // slow wander on the current + bobbing on small swells
+      const drift = Math.sin(time * 0.15 + f.ph) * 0.08 + Math.sin(time * 0.37 + f.ph * 2) * 0.025;
       const x = cx + (f.X + drift) * s;
-      const y = hz + s * (1 + Math.sin(time * 1.1 + f.ph) * 0.01);
+      const y = hz + s + Math.sin(time * 1.1 + f.ph) * 0.016 * s;
       if (y > H + 40) continue;
       const fade = smooth(0, 0.5, lit);
       const flash = 1 + 1.6 * Math.exp(-lit * 3.5);
       const flick = 0.82 + 0.1 * Math.sin(time * 9 + f.ph * 5) + 0.08 * Math.sin(time * 23 + f.ph);
-      const bw = (f.lotus ? 0.4 : 0.36) * s;
+      const bw = (f.lotus ? 0.4 : 0.36) * s * f.scale;
+      const flip = f.lotus ? 1 : f.flip;
       const anchor = f.lotus ? LOTUS_FLAME : DIYA_FLAME;
       const sprite = f.lotus ? S.lotus : S.diya;
+      const wl = f.lotus ? WL_LOTUS : WL_DIYA; // fraction of the sprite above water
       const bh = (bw * sprite.height) / sprite.width;
-      const bx = x - bw / 2;
-      const by = y - bh * 0.78;
-      const fx = bx + bw * anchor.x;
-      const fy = by + bh * anchor.y;
+      const above = bh * wl;
+      const fx = x + (anchor.x - 0.5) * bw * flip;
+      const fy = y - above + bh * anchor.y;
 
-      // reflection: stretched glow under the light
+      // light reflection: stretched glow under the flame
       ctx.globalCompositeOperation = "lighter";
       const rw = bw * 0.55;
       const wob = Math.sin(time * 1.8 + f.ph + y * 0.04) * rw * 0.18;
-      ctx.globalAlpha = fade * 0.32 * flick;
-      ctx.drawImage(S.glow, fx - rw / 2 + wob, y - bh * 0.1, rw, rw * 3.4);
+      ctx.globalAlpha = fade * 0.26 * flick;
+      ctx.drawImage(S.glow, fx - rw / 2 + wob, y - bh * 0.05, rw, rw * 3.4);
 
       // halo
-      const gr = bw * 1.2 * flash;
-      ctx.globalAlpha = fade * (f.Z > 12 ? 0.3 : 0.42) * flick;
+      const gr = bw * 1.1 * flash;
+      ctx.globalAlpha = fade * (f.Z > 12 ? 0.26 : 0.34) * flick;
       ctx.drawImage(S.glow, fx - gr, fy - gr * 1.1, gr * 2, gr * 2);
 
       if (bw > 4) {
-        // body
+        // rock gently around the water line
+        const rock = Math.sin(time * 0.9 + f.ph * 1.3) * 0.05 + Math.sin(time * 1.7 + f.ph) * 0.018;
+        const c = Math.cos(rock) * dpr;
+        const sn = Math.sin(rock) * dpr;
+        ctx.setTransform(c, sn, -sn, c, x * dpr, y * dpr);
+        if (flip < 0) ctx.scale(-1, 1);
+        const sw = sprite.width;
+        const sh = sprite.height * wl;
+        const vis = fade * (0.55 + 0.45 * warmth);
+
+        // mirrored body below the water line, squashed and faint
         ctx.globalCompositeOperation = "source-over";
-        ctx.globalAlpha = fade * (0.55 + 0.45 * warmth);
-        ctx.drawImage(sprite, bx, by, bw, bh);
-        // flame
+        ctx.globalAlpha = vis * 0.22;
+        ctx.scale(1, -0.75);
+        ctx.drawImage(sprite, 0, 0, sw, sh, -bw / 2, -above, bw, above);
+        ctx.scale(1, -1 / 0.75);
+
+        // body, cropped at the water line so it sits *in* the water
+        ctx.globalAlpha = vis;
+        ctx.drawImage(sprite, 0, 0, sw, sh, -bw / 2, -above, bw, above);
+
+        // ring where the hull meets the water
+        const rx = bw * 0.5 * (1 + 0.05 * Math.sin(time * 1.6 + f.ph));
+        ctx.globalAlpha = fade * 0.3;
+        ctx.strokeStyle = "#ffd696";
+        ctx.lineWidth = Math.max(0.6, bw * 0.014);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, rx * 0.13, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // flame (stays upright-ish: counter part of the rock)
         ctx.globalCompositeOperation = "lighter";
+        const lfx = -bw / 2 + bw * anchor.x;
+        const lfy = -above + bh * anchor.y;
         const fh = bw * 0.36 * flick * Math.min(1, flash);
         const fw = fh * 0.5;
         ctx.globalAlpha = fade;
-        ctx.drawImage(S.flame, fx - fw / 2, fy - fh * 0.92, fw, fh);
+        ctx.translate(lfx, lfy);
+        ctx.rotate(-rock * 0.7 * flip);
+        ctx.drawImage(S.flame, -fw / 2, -fh * 0.92, fw, fh);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       } else {
         ctx.globalAlpha = fade * flick;
         const d = Math.max(0.8, bw * 0.35);
@@ -758,7 +821,8 @@ export class Engine {
     const k = (HERO_SIZE * p.s) / HERO_VB.w;
     const left = p.x - HERO_ANCHOR.x * k;
     const top = p.y - HERO_ANCHOR.y * k;
-    this.hero.style.transform = `translate3d(${left.toFixed(1)}px,${top.toFixed(1)}px,0)`;
+    const rock = Math.sin(time * 0.85) * 2.6 + Math.sin(time * 1.9 + 1) * 0.9; // degrees
+    this.hero.style.transform = `translate3d(${left.toFixed(1)}px,${top.toFixed(1)}px,0) rotate(${rock.toFixed(2)}deg)`;
     void hz;
 
     if (tl < 0) return;
