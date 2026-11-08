@@ -20,10 +20,11 @@ The project token is built into `lib/analytics.ts`; you can override it with `NE
 
 | Event | Key properties |
 | --- | --- |
-| `Page View` | `arrived_via_share`, `chain_position`, `referrer_id`, `in_app_browser`, `has_sender_name` |
+| `Page View` | `arrived_via_share`, `chain_position`, `referrer_id`, `in_app_browser`, `has_sender_name`, `sender_name` |
+| `Name Added` | `name`, `sender_name` |
 | `Diya Lit` | `seconds_to_tap` |
 | `Finale Reached` | |
-| `Share` | `method` (whatsapp / native / copy_link), `has_name`, `first_share` |
+| `Share` | `method` (whatsapp / native / copy_link), `has_name`, `name`, `sender_name`, `first_share` |
 | `Replay` | |
 
 Every share link carries `r` (the sharer's short visitor id) and `c` (chain position). Some useful reports:
@@ -32,7 +33,7 @@ Every share link carries `r` (the sharer's short visitor id) and `c` (chain posi
 - **K-factor:** unique `Page View` users with a `referrer_id` ÷ unique users who did `Share`
 - **Chain depth:** max / distribution of `chain_position`
 
-Typed names are never sent to Mixpanel.
+Names are sent: `name` is what the visitor typed, `sender_name` is the name from the link they opened. Both are cleaned to letters only, max 24 characters.
 
 ## Share links
 

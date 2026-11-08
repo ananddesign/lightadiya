@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const cormorant = Cormorant_Garamond({
@@ -8,6 +9,15 @@ const cormorant = Cormorant_Garamond({
   style: ["normal", "italic"],
   display: "swap",
   variable: "--font-cormorant",
+});
+
+// Safira March by Din Studio: personal / non-commercial licence.
+// Subset to Latin and converted to woff2 (~26 KB).
+const safira = localFont({
+  src: "./fonts/safira-march.woff2",
+  display: "swap",
+  variable: "--font-safira",
+  fallback: ["Cormorant Garamond", "Georgia", "serif"],
 });
 
 const site =
@@ -35,7 +45,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={cormorant.variable}>
+    <html lang="en" className={`${cormorant.variable} ${safira.variable}`}>
       <body>{children}</body>
     </html>
   );

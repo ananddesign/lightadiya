@@ -6,13 +6,18 @@
  * sharer's short id as `r`, so in Mixpanel you can count, per sharer, how many
  * new people arrived through their link (the K-factor), and how deep chains go (`c`).
  *
- * Names typed by users are never sent, only whether one was added.
+ * Names: the sender's name (from the link) and the name a visitor types are
+ * sent as `sender_name` / `name`, so you can see who is spreading the light.
  */
 
 // Project tokens are public by design (they ship in client JS), so a default is fine.
 const TOKEN = process.env.NEXT_PUBLIC_MIXPANEL_TOKEN || "a4624958593767863c60979eb94e0ae8";
 // Keep local testing out of the real numbers unless explicitly enabled.
 const TRACK_LOCAL = process.env.NEXT_PUBLIC_MIXPANEL_TRACK_LOCAL === "1";
+// Headless browsers, crawlers and deploy/screenshot bots shouldn't count as visits.
+const isBot = () =>
+  !!(navigator as Navigator & { webdriver?: boolean }).webdriver ||
+  /bot\b|crawl|spider|slurp|HeadlessChrome|Lighthouse|PTST|vercel|screenshot/i.test(navigator.userAgent);
 const isLocal = () => /^(localhost|127\.0\.0\.1|\[::1\]|.*\.local)$/.test(location.hostname);
 const ENDPOINT = "https://api-js.mixpanel.com/track/?ip=1";
 const ID_KEY = "diya:id";
@@ -70,6 +75,7 @@ export function initAnalytics(params: URLSearchParams) {
 export function track(event: string, props: Record<string, unknown> = {}) {
   if (!TOKEN || !distinctId) return;
   if (!TRACK_LOCAL && isLocal()) return;
+  if (isBot()) return;
   const payload = [
     {
       event,

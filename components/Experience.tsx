@@ -62,7 +62,7 @@ export default function Experience({ from, chain }: Props) {
 
     initAnalytics(new URLSearchParams(window.location.search));
     startRef.current = performance.now();
-    track("Page View", { has_sender_name: !!from, reduced_motion: reduced });
+    track("Page View", { has_sender_name: !!from, sender_name: from || undefined, reduced_motion: reduced });
 
     try {
       const saved = localStorage.getItem(NAME_KEY);
@@ -108,6 +108,15 @@ export default function Experience({ from, chain }: Props) {
     soundRef.current?.setMuted(next);
   };
 
+  // fire "Name Added" once per distinct name, when the field loses focus
+  const lastNameRef = useRef("");
+  const onNameDone = () => {
+    const n = cleanName(name);
+    if (!n || n === lastNameRef.current) return;
+    lastNameRef.current = n;
+    track("Name Added", { name: n, sender_name: from || undefined });
+  };
+
   const onName = (v: string) => {
     const n = v.slice(0, MAX_NAME);
     setName(n);
@@ -119,7 +128,9 @@ export default function Experience({ from, chain }: Props) {
   const url = () => buildShareUrl(cleanName(name), myNumber, shortId());
 
   const trackShare = (method: string) => {
-    track("Share", { method, has_name: !!cleanName(name), first_share: !sharedRef.current, stage });
+    onNameDone();
+    const n = cleanName(name);
+    track("Share", { method, has_name: !!n, name: n || undefined, sender_name: from || undefined, first_share: !sharedRef.current, stage });
     sharedRef.current = true;
   };
 
@@ -200,7 +211,7 @@ export default function Experience({ from, chain }: Props) {
                   शुभ दीपावली
                 </m.p>
                 <m.h2
-                  className="title mt-1 text-[clamp(3rem,13vw,5.5rem)]"
+                  className="title script mt-1 text-[clamp(3rem,13vw,5.5rem)]"
                   variants={{ hidden: { opacity: 0, y: 16, scale: 0.98 }, show: { opacity: 1, y: 0, scale: 1 } }}
                   transition={{ duration: 1.6, ease, delay: 0.25 }}
                 >
@@ -262,6 +273,7 @@ export default function Experience({ from, chain }: Props) {
                   id="name"
                   value={name}
                   onChange={(e) => onName(e.target.value)}
+                  onBlur={onNameDone}
                   maxLength={MAX_NAME}
                   autoComplete="given-name"
                   enterKeyHint="send"
