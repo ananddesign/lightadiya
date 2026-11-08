@@ -36,6 +36,10 @@ body {
   font-weight: 500;
   line-height: 0.95;
   letter-spacing: -0.01em;
+  /* background-clip:text only paints inside the box, so give descenders
+     (g, p, y) room without changing the visual spacing */
+  padding: 0.04em 0.06em 0.16em;
+  margin-bottom: -0.12em;
   background: linear-gradient(180deg, #fff8e8 0%, #ffd98f 55%, #f2a948 100%);
   -webkit-background-clip: text;
   background-clip: text;
