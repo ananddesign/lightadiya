@@ -6,7 +6,10 @@
 
 type Ctx = AudioContext;
 
-const PENTA = [587.3, 659.3, 740, 880, 987.8, 1174.7, 1318.5, 1480];
+import { Music } from "./music";
+
+// Bhupali in the middle register (A3 … E5): warm, not tinkly
+const PIANO = [220, 246.94, 293.66, 329.63, 369.99, 440, 493.88, 587.33, 659.26];
 
 export class SoundScape {
   private ctx: Ctx | null = null;
@@ -16,6 +19,8 @@ export class SoundScape {
   private padNodes: OscillatorNode[] = [];
   private noise: AudioBuffer | null = null;
   private lastPlink = 0;
+  private pianoIdx = 4;
+  private music: Music | null = null;
   muted = false;
 
   /** Must be called from a user gesture (iOS). */
@@ -39,6 +44,29 @@ export class SoundScape {
     const d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noise = buf;
+    this.music = new Music(ctx, master, buf);
+    document.addEventListener("visibilitychange", this.onVisibility);
+  }
+
+  /** Don't keep playing while the person is off in WhatsApp sharing. */
+  private onVisibility = () => {
+    if (!this.ctx) return;
+    if (document.hidden) void this.ctx.suspend();
+    else void this.ctx.resume();
+  };
+
+  /** Soft santoor music, starting `delay` seconds after lighting. */
+  startMusic(delay = 1.6) {
+    this.music?.start(delay);
+  }
+
+  /** Flute melody joins as the lanterns rise. */
+  riseMusic() {
+    this.music?.rise();
+  }
+
+  stopMusic() {
+    this.music?.stop();
   }
 
   setMuted(m: boolean) {
@@ -108,32 +136,64 @@ export class SoundScape {
     }
   }
 
+  /**
+   * Soft piano note as a diya catches light. Notes walk gently up and down
+   * Bhupali (D E F# A B) in the middle register, so a stream of them sounds
+   * like someone idly playing, not random blips.
+   */
   plink(nearness = 0.5) {
     const { ctx, master } = this;
     if (!ctx || !master) return;
     const now = ctx.currentTime;
-    if (now - this.lastPlink < 0.085) return;
+    if (now - this.lastPlink < 0.24) return; // a few notes a second at most
     this.lastPlink = now;
-    const o = ctx.createOscillator();
-    o.type = "triangle";
-    o.frequency.value = PENTA[(Math.random() * PENTA.length) | 0];
-    const g = ctx.createGain();
-    const v = 0.02 + 0.045 * nearness;
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(v, now + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 1.3);
-    let out: AudioNode = g;
+
+    // random walk through the scale, biased to drift back to the middle
+    const mid = (PIANO.length - 1) / 2;
+    const step = Math.random() < 0.5 + (this.pianoIdx - mid) * 0.06 ? -1 : 1;
+    this.pianoIdx = Math.max(0, Math.min(PIANO.length - 1, this.pianoIdx + step));
+    const f = PIANO[this.pianoIdx];
+    const t = now + Math.random() * 0.04; // tiny human timing
+    const v = 0.012 + 0.016 * nearness;
+
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.setValueAtTime(2600, t);
+    tone.frequency.exponentialRampToValueAtTime(900, t + 1.2);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(v, t + 0.014); // soft hammer
+    env.gain.exponentialRampToValueAtTime(v * 0.4, t + 0.35);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+    tone.connect(env);
+
+    // fundamental + gentle overtones that fade faster, like a felt piano
+    for (const [mult, amp, dec] of [
+      [1, 1, 2.6],
+      [2, 0.28, 1.1],
+      [3, 0.07, 0.6],
+    ] as const) {
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = f * mult;
+      const a = ctx.createGain();
+      a.gain.setValueAtTime(amp, t);
+      a.gain.exponentialRampToValueAtTime(0.0001, t + dec);
+      o.connect(a).connect(tone);
+      o.start(t);
+      o.stop(t + dec + 0.05);
+    }
+
+    let out: AudioNode = env;
     if (ctx.createStereoPanner) {
       const p = ctx.createStereoPanner();
-      p.pan.value = Math.random() * 1.6 - 0.8;
-      g.connect(p);
+      p.pan.value = Math.random() * 0.8 - 0.4;
+      env.connect(p);
       out = p;
     }
-    o.connect(g);
     out.connect(master);
-    o.start(now);
-    o.stop(now + 1.35);
   }
+
 
   /** Drone: D (Sa) and A (Pa), slightly detuned, through a lowpass. */
   startPad() {
@@ -142,10 +202,10 @@ export class SoundScape {
     const t = ctx.currentTime;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.085, t + 4);
+    g.gain.exponentialRampToValueAtTime(0.03, t + 4); // quiet bed under the music
     const f = ctx.createBiquadFilter();
     f.type = "lowpass";
-    f.frequency.value = 520;
+    f.frequency.value = 380;
     f.Q.value = 0.4;
     f.connect(g).connect(master);
     for (const [fr, det] of [
@@ -155,7 +215,7 @@ export class SoundScape {
       [293.7, 6],
     ] as const) {
       const o = ctx.createOscillator();
-      o.type = "sawtooth";
+      o.type = "triangle"; // softer than sawtooth: less harmonium buzz
       o.frequency.value = fr;
       o.detune.value = det;
       const og = ctx.createGain();
@@ -173,7 +233,7 @@ export class SoundScape {
     const { ctx, padFilter } = this;
     if (!ctx || !padFilter) return;
     const t = ctx.currentTime;
-    padFilter.frequency.setTargetAtTime(1300, t, 2.2);
+    padFilter.frequency.setTargetAtTime(650, t, 2.2);
   }
 
   stopPad() {
@@ -190,6 +250,9 @@ export class SoundScape {
   }
 
   dispose() {
+    document.removeEventListener("visibilitychange", this.onVisibility);
+    this.music?.stop(0.1);
+    this.music = null;
     this.stopPad();
     void this.ctx?.close();
     this.ctx = null;

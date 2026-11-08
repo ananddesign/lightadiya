@@ -55,6 +55,7 @@ export default function Experience({ from, chain }: Props) {
       onIgnite: (n) => sound.plink(n),
       onRise: () => {
         sound.swell();
+        sound.riseMusic();
         sound.bell(587.3, 0.1);
       },
     });
@@ -85,6 +86,7 @@ export default function Experience({ from, chain }: Props) {
     sound?.strike();
     sound?.bell(392, 0.2, 0.35);
     sound?.startPad();
+    sound?.startMusic(4.2); // let the soft piano lead while the lake lights up
     try {
       navigator.vibrate?.(18);
     } catch {}
@@ -97,6 +99,7 @@ export default function Experience({ from, chain }: Props) {
     track("Replay");
     startRef.current = performance.now();
     soundRef.current?.stopPad();
+    soundRef.current?.stopMusic();
     engineRef.current?.replay();
     setCopied(false);
     setStage("intro");
